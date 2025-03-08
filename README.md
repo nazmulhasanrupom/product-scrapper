@@ -45,5 +45,61 @@ urllib.parse: For parsing URLs (part of the standard library).
 ` pip install lxml `
 
 
+## Now update the HTML Classes in the code**
+
+## Features : 
+
+Here’s a list of the overall features of the code I’ve been working on:
+
+1. **Scraping Methods**:
+   - **Sitemap-based Scraping**: Allows scraping product links from sitemap.xml files.
+   - **Home URL Scraping**: Scrapes product links starting from the home URL and follows internal links.
+   - **Single Page Scraping**: Scrapes product links from a single page specified by the user.
+
+2. **Customizable Input Options**:
+   - The user can choose from different scraping methods (sitemap, home URL, or single page).
+   - Ability to manually input multiple sitemaps.
+   - Option to provide a text file containing a list of sitemap URLs for automatic scraping.
+
+3. **Product Data Collection**:
+   - Scrapes essential product details: title, description, price, and image URL.
+   - Fallback methods in case some product details are missing (e.g., using `meta` tags for missing content).
+
+4. **Multi-threading for Faster Scraping**:
+   - Uses **multi-threading** to scrape product pages concurrently for faster data collection.
+   - Worker threads process URLs concurrently, improving performance.
+
+5. **Queue Management**:
+   - A thread-safe queue to store URLs that need to be scraped.
+   - URL visits are tracked to avoid re-scraping the same URLs.
+
+6. **Resumption After Interruption**:
+   - **Resumes scraping from where it left off** in case of interruptions (power cut, internet failure, etc.).
+   - **Persistent storage** of visited URLs and scraped data using **pickle**.
+
+7. **CSV Output**:
+   - Scraped product data is stored in a CSV file.
+   - The CSV file contains columns for URL, title, description, price, and image URL.
+   - Automatically appends each product’s details to the CSV file and shows a count of how many products have been scraped.
+
+8. **Dynamic Sitemap Parsing**:
+   - Can handle multiple sitemap URLs and gather products from all listed URLs.
+   - Automatically follows links from a sitemap to scrape products.
+
+9. **Error Handling**:
+   - Handles exceptions gracefully and skips problematic pages without halting the scraping process.
+   - Logs errors when a product page fails to load or cannot be scraped.
+
+10. **Configuration and Control**:
+   - Allows the user to define how many products to scrape (product limit).
+   - Allows pausing and resuming scraping when the product limit is reached.
+
+11. **Efficiency Improvements**:
+   - Implements **rate limiting** (with a short delay) between requests to avoid overwhelming the server.
+   - **Session reuse** for HTTP requests to speed up the process and reduce the overhead of new connections.
+
+12. **File Input for Sitemaps**:
+   - Allows reading multiple sitemaps from a text file, making it easy to scrape from a list of sitemaps without manual input.
+
 
 
