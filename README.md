@@ -40,8 +40,10 @@ threading: For handling multiple threads (part of the standard library).
 
 urllib.parse: For parsing URLs (part of the standard library).
 
-## pip install requests
-## pip install beautifulsoup4
-## pip install lxml
+` pip install requests `
+` pip install beautifulsoup4 `
+` pip install lxml `
+
+
 
 
