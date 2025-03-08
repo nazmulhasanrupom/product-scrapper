@@ -1,100 +1,87 @@
-import requests
-from bs4 import BeautifulSoup
-import csv
-from urllib.parse import urljoin, urlparse
+import os
+import json
 import time
 import threading
 import queue
+import csv
+import requests
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin, urlparse
 import xml.etree.ElementTree as ET
-import json
-import os
 
 # -----------------------------
-# Global Variables and Session
+# Global Variables
 # -----------------------------
-visited = set()                   # To track processed URLs
-visited_lock = threading.Lock()   # Lock for visited set
-scraped_count = 0                 # Count of scraped products
-scraped_lock = threading.Lock()   # Lock for updating scraped_count
-stop_crawl = False                # Flag to signal threads to stop
-work_queue = queue.Queue()        # Queue for URLs to process
-session = requests.Session()      # Global session for HTTP requests
+visited = set()               # URLs that have been processed
+scraped_count = 0             # Count of products scraped
+scraped_products = []         # List of product URLs that have been scraped
+stop_crawl = False            # Flag to signal threads to stop
+work_queue = queue.Queue()    # Thread-safe queue for URLs to process
+session = requests.Session()  # Reuse HTTP connections
 
-# For resume functionality:
+# Additional globals for resume functionality and crawl mode
 resume_file = "resume_state.json"
-resume_lock = threading.Lock()    # Lock for writing resume state
-scraped_products = []             # List of scraped product URLs (for resume)
+crawl_mode = False            # True if using Home URL mode (crawling internal links)
+base_netloc = None            # The base domain (used in crawling mode)
+
+# Lock objects
+visited_lock = threading.Lock()
+scraped_lock = threading.Lock()
+resume_lock = threading.Lock()
 
 # -----------------------------
-# Resume State Functions
+# Resume Functions
 # -----------------------------
 def update_resume_state():
-    """
-    Save current state (visited, pending URLs, and scraped product URLs) to a JSON file.
-    """
+    """Save current state (visited URLs, scraped product URLs, pending queue, crawl_mode and base_netloc)"""
     with resume_lock:
         state = {
-            "scraped": scraped_products,              # Already scraped product URLs
-            "visited": list(visited),                 # Visited URLs
-            "pending": list(work_queue.queue)         # Pending URLs (from the queue)
+            "visited": list(visited),
+            "scraped": scraped_products,
+            "pending": list(work_queue.queue),
+            "crawl_mode": crawl_mode,
+            "base_netloc": base_netloc
         }
         with open(resume_file, "w", encoding="utf-8") as f:
             json.dump(state, f, indent=4)
 
 def load_resume_state():
-    """
-    Load state from the resume file.
-    Returns a tuple: (visited_set, scraped_list, pending_list)
-    """
+    """Load state from resume file and return the components."""
     try:
         with open(resume_file, "r", encoding="utf-8") as f:
             state = json.load(f)
-        return set(state.get("visited", [])), state.get("scraped", []), state.get("pending", [])
+        return (set(state.get("visited", [])),
+                state.get("scraped", []),
+                state.get("pending", []),
+                state.get("crawl_mode", False),
+                state.get("base_netloc", None))
     except Exception as e:
         print(f"Error loading resume state: {e}")
-        return set(), [], []
+        return set(), [], [], False, None
 
 # -----------------------------
 # Helper Functions
 # -----------------------------
-
 def is_internal_url(url, base_netloc):
-    """Check if the URL belongs to the same domain."""
+    """Return True if the URL is on the same domain as base_netloc."""
     parsed = urlparse(url)
-    return parsed.netloc == base_netloc or parsed.netloc == ""
+    return (parsed.netloc == base_netloc) or (parsed.netloc == "")
 
 def is_product_page(url):
-    """
-    Determine if the URL is likely a product page.
-    We assume product pages contain '/product/' in the path.
-    """
+    """Return True if the URL looks like a product page (contains '/product/')."""
     parsed = urlparse(url)
     return '/product/' in parsed.path
 
 def scrape_product(url):
-    """
-    Scrape a product page for:
-      - Title: primary in an <h1> tag with class "product_title entry-title"
-               fallback: meta tag "og:title"
-      - Description: primary in a <div> tag with class "e-n-tabs-content"
-                     fallback: <div> with id "tab-description"
-                     fallback: <div> with class "woocommerce-Tabs-panel woocommerce-Tabs-panel--description"
-      - Price: primary in a <span> tag with class "woocommerce-Price-amount amount"
-               fallback: <p> tag with class "price"
-      - Image: primary in an <img> tag inside a <figure> tag with class "woocommerce-product-gallery__image"
-               fallback: meta tag "og:image"
-    Returns a dictionary with the product details (using "N/A" for missing fields).
-    """
+    """Scrape a product page for title, description, price, and image URL."""
     print(f"Scraping product: {url}")
     try:
         response = session.get(url, timeout=10)
         if response.status_code != 200:
             print(f"Failed to retrieve {url}")
             return None
-
         soup = BeautifulSoup(response.text, "html.parser")
-        
-        # --- Title Extraction ---
+        # --- Title ---
         title = "N/A"
         title_tag = soup.find("h1", class_="product_title entry-title")
         if title_tag:
@@ -103,8 +90,7 @@ def scrape_product(url):
             meta_title = soup.find("meta", property="og:title")
             if meta_title and meta_title.get("content"):
                 title = meta_title["content"].strip()
-        
-        # --- Description Extraction ---
+        # --- Description ---
         description = "N/A"
         desc_tag = soup.find("div", class_="e-n-tabs-content")
         if desc_tag:
@@ -117,8 +103,7 @@ def scrape_product(url):
                 alt_desc_tag = soup.find("div", class_="woocommerce-Tabs-panel woocommerce-Tabs-panel--description")
                 if alt_desc_tag:
                     description = alt_desc_tag.get_text(strip=True)
-        
-        # --- Price Extraction ---
+        # --- Price ---
         price = "N/A"
         price_tag = soup.find("span", class_="woocommerce-Price-amount amount")
         if price_tag:
@@ -127,23 +112,21 @@ def scrape_product(url):
             p_price = soup.find("p", class_="price")
             if p_price:
                 price = p_price.get_text(strip=True)
-        
-        # --- Image Extraction ---
+        # --- Image URL ---
         image_url = "N/A"
         figure_tag = soup.find("figure", class_="woocommerce-product-gallery__image")
         if figure_tag:
             img_tag = figure_tag.find("img")
-            if img_tag and img_tag.has_attr("src"):
+            if img_tag and img_tag.get("src"):
                 image_url = img_tag["src"]
         else:
             meta_img = soup.find("meta", property="og:image")
             if meta_img and meta_img.get("content"):
                 image_url = meta_img["content"].strip()
-        
+        # If nothing found, skip the page.
         if title == "N/A" and description == "N/A" and price == "N/A" and image_url == "N/A":
-            print("No product info found on page, skipping.")
+            print("No product info found, skipping.")
             return None
-
         return {
             "url": url,
             "title": title,
@@ -152,14 +135,11 @@ def scrape_product(url):
             "image_url": image_url
         }
     except Exception as e:
-        print(f"Error scraping product at {url}: {e}")
+        print(f"Error scraping {url}: {e}")
         return None
 
 def parse_sitemap(sitemap_url):
-    """
-    Given a sitemap.xml URL, fetch it and parse out all product links (from <loc> tags).
-    Returns a set of URLs that appear to be product pages.
-    """
+    """Parse a sitemap.xml and return a set of product URLs."""
     product_urls = set()
     try:
         print(f"Fetching sitemap: {sitemap_url}")
@@ -169,8 +149,8 @@ def parse_sitemap(sitemap_url):
             return product_urls
         root = ET.fromstring(response.content)
         ns = {'ns': 'http://www.sitemaps.org/schemas/sitemap/0.9'}
-        for url_element in root.findall("ns:url", ns):
-            loc = url_element.find("ns:loc", ns)
+        for url_elem in root.findall("ns:url", ns):
+            loc = url_elem.find("ns:loc", ns)
             if loc is not None and loc.text:
                 url_text = loc.text.strip()
                 if is_product_page(url_text):
@@ -180,13 +160,10 @@ def parse_sitemap(sitemap_url):
     return product_urls
 
 def extract_product_urls_from_page(page_url):
-    """
-    Given a single page URL, fetch it and extract product links.
-    Returns a set of URLs that appear to be product pages.
-    """
+    """Extract product URLs from a single page that lists products."""
     product_urls = set()
     try:
-        print(f"Fetching single page: {page_url}")
+        print(f"Fetching page: {page_url}")
         response = requests.get(page_url, timeout=10)
         if response.status_code != 200:
             print(f"Failed to fetch page: {page_url}")
@@ -201,13 +178,10 @@ def extract_product_urls_from_page(page_url):
     return product_urls
 
 # -----------------------------
-# Worker Functions
+# Worker Function (Unified)
 # -----------------------------
-def worker_product(product_limit, csv_writer, num_threads):
-    """
-    Worker for modes where a pre-populated list of product URLs is processed.
-    """
-    global scraped_count, stop_crawl, scraped_products
+def worker(num_threads, product_limit):
+    global scraped_count, stop_crawl, crawl_mode
     while True:
         try:
             current_url = work_queue.get(timeout=3)
@@ -225,114 +199,72 @@ def worker_product(product_limit, csv_writer, num_threads):
                 work_queue.task_done()
                 continue
             visited.add(current_url)
-        product = scrape_product(current_url)
-        if product:
-            with scraped_lock:
-                if scraped_count < product_limit:
-                    csv_writer.writerow(product)
-                    scraped_count += 1
-                    scraped_products.append(product["url"])
-                    print(f"Scraped products: {scraped_count}")
-                    if scraped_count % 10 == 0:
-                        print(f"Batch complete: {scraped_count} products scraped so far.")
-                    update_resume_state()
-                    if scraped_count >= product_limit and not stop_crawl:
-                        stop_crawl = True
-                        for _ in range(num_threads):
-                            work_queue.put(None)
-        time.sleep(0.1)
-        work_queue.task_done()
-
-def worker_crawl(base_netloc, product_limit, csv_writer, num_threads):
-    """
-    Worker for Home URL mode: Crawl starting from the given URL,
-    follow internal links, and scrape product pages.
-    """
-    global scraped_count, stop_crawl, scraped_products
-    while True:
-        try:
-            current_url = work_queue.get(timeout=3)
-        except queue.Empty:
-            break
-        if current_url is None:
-            work_queue.task_done()
-            break
-        with scraped_lock:
-            if stop_crawl:
-                work_queue.task_done()
-                break
-        with visited_lock:
-            if current_url in visited:
-                work_queue.task_done()
-                continue
-            visited.add(current_url)
-        try:
-            response = session.get(current_url, timeout=10)
-        except Exception as e:
-            print(f"Error fetching {current_url}: {e}")
-            work_queue.task_done()
-            continue
-        if response.status_code != 200:
-            work_queue.task_done()
-            continue
-        soup = BeautifulSoup(response.text, "html.parser")
+        # If URL is a product page, scrape it
         if is_product_page(current_url):
             product = scrape_product(current_url)
             if product:
                 with scraped_lock:
                     if scraped_count < product_limit:
+                        # Write the product data
                         csv_writer.writerow(product)
                         scraped_count += 1
                         scraped_products.append(product["url"])
                         print(f"Scraped products: {scraped_count}")
-                        if scraped_count % 10 == 0:
-                            print(f"Batch complete: {scraped_count} products scraped so far.")
                         update_resume_state()
                         if scraped_count >= product_limit and not stop_crawl:
                             stop_crawl = True
                             for _ in range(num_threads):
                                 work_queue.put(None)
-        # Enqueue internal links
-        for a_tag in soup.find_all("a", href=True):
-            href = a_tag["href"]
-            full_url = urljoin(current_url, href).split("#")[0]
-            with visited_lock:
-                if full_url not in visited and is_internal_url(full_url, base_netloc):
-                    work_queue.put(full_url)
+        # If crawl_mode is enabled (Home URL mode), then find and enqueue internal links
+        if crawl_mode:
+            try:
+                resp = session.get(current_url, timeout=10)
+                if resp.status_code == 200:
+                    soup = BeautifulSoup(resp.text, "html.parser")
+                    for a_tag in soup.find_all("a", href=True):
+                        full_url = urljoin(current_url, a_tag["href"]).split("#")[0]
+                        with visited_lock:
+                            if full_url not in visited and is_internal_url(full_url, base_netloc):
+                                work_queue.put(full_url)
+            except Exception as e:
+                print(f"Error crawling {current_url}: {e}")
         time.sleep(0.1)
         work_queue.task_done()
 
 # -----------------------------
-# Main Function and Mode Selection
+# Main Execution
 # -----------------------------
 if __name__ == "__main__":
-    # Check for resume state
+    NUM_THREADS = 10  # Number of threads to use
+
     resume_mode = False
+    # Check if a resume file exists
     if os.path.exists(resume_file):
-        choice = input("A resume state was found. Do you want to resume the previous session? (y/n): ").strip().lower()
+        choice = input("Found a resume state. Do you want to resume? (y/n): ").strip().lower()
         if choice == "y":
             resume_mode = True
-            loaded_visited, loaded_scraped, loaded_pending = load_resume_state()
+            loaded_visited, loaded_scraped, loaded_pending, loaded_crawl_mode, loaded_base_netloc = load_resume_state()
             visited = loaded_visited
             scraped_products = loaded_scraped
             scraped_count = len(scraped_products)
             for url in loaded_pending:
                 work_queue.put(url)
-            print(f"Resuming session: {scraped_count} products already scraped, {len(loaded_pending)} URLs pending.")
+            crawl_mode = loaded_crawl_mode
+            base_netloc = loaded_base_netloc
+            print(f"Resuming: {scraped_count} products scraped; {len(loaded_pending)} URLs pending.")
         else:
             os.remove(resume_file)
-    
-    # If not resuming, choose scraping mode.
+
     if not resume_mode:
+        # Mode Selection:
         print("Select scraping mode:")
         print("1: Sitemap Mode")
         print("2: Home URL Mode (crawl the site)")
         print("3: Single Page Mode (scrape products from one page)")
-        print("4: Product URL File Mode (list of product URLs in a text file)")
+        print("4: Product URL File Mode (list product URLs from a text file)")
         mode = input("Enter option (1/2/3/4): ").strip()
 
-        product_urls = set()  # Will hold product URLs for modes 1, 3, and 4
-        base_netloc = None
+        product_urls = set()
 
         if mode == "1":
             # Sitemap Mode
@@ -346,7 +278,7 @@ if __name__ == "__main__":
                     sitemap_url = input("Enter a sitemap URL: ").strip()
                     if sitemap_url:
                         sitemap_urls.append(sitemap_url)
-                    more = input("Do you have another sitemap? (yes/no): ").strip().lower()
+                    more = input("Another sitemap? (yes/no): ").strip().lower()
                     if more != "yes":
                         break
             elif sub_option == "b":
@@ -371,22 +303,26 @@ if __name__ == "__main__":
                 print(f"Found {len(urls)} product URLs in sitemap: {sitemap}")
                 product_urls.update(urls)
             if not product_urls:
-                print("No product URLs found in the provided sitemaps. Exiting.")
+                print("No product URLs found. Exiting.")
                 exit(1)
+            # For sitemap mode, we do not crawl further.
+            crawl_mode = False
+            # Set base_netloc from the first sitemap URL
             base_netloc = urlparse(sitemap_urls[0]).netloc
 
         elif mode == "2":
-            # Home URL Mode
+            # Home URL Mode (Crawl)
             home_url = input("Enter the home URL: ").strip()
             if not home_url:
                 print("No URL provided. Exiting.")
                 exit(1)
+            crawl_mode = True
             base_netloc = urlparse(home_url).netloc
             work_queue.put(home_url)
 
         elif mode == "3":
             # Single Page Mode
-            page_url = input("Enter the single page URL: ").strip()
+            page_url = input("Enter the page URL that lists products: ").strip()
             if not page_url:
                 print("No URL provided. Exiting.")
                 exit(1)
@@ -394,6 +330,7 @@ if __name__ == "__main__":
             if not product_urls:
                 print("No product URLs found on the page. Exiting.")
                 exit(1)
+            crawl_mode = False
             base_netloc = urlparse(page_url).netloc
 
         elif mode == "4":
@@ -411,64 +348,47 @@ if __name__ == "__main__":
             if not product_urls:
                 print("No product URLs found in the file. Exiting.")
                 exit(1)
+            crawl_mode = False
             base_netloc = urlparse(next(iter(product_urls))).netloc
 
         else:
             print("Invalid mode selected. Exiting.")
             exit(1)
 
-        print(f"Total unique product URLs collected: {len(product_urls)}")
-        # Pre-populate the work queue for modes 1, 3, and 4.
+        # If using modes 1, 3, or 4, pre-populate the queue with the product URLs.
         if mode in ["1", "3", "4"]:
             for url in product_urls:
                 work_queue.put(url)
 
-        # Ask for the product limit.
+        # Ask for product limit
         try:
-            product_limit = int(input("Enter how many products you want to scrape: "))
+            product_limit = int(input("Enter how many products to scrape: "))
         except ValueError:
-            print("Invalid number entered. Exiting.")
+            print("Invalid number. Exiting.")
             exit(1)
-    
-    # If resuming, ask for (or confirm) product limit.
-    if resume_mode:
-        try:
-            product_limit = int(input("Enter the total product limit for this session (including already scraped): "))
-        except ValueError:
-            print("Invalid number entered. Exiting.")
-            exit(1)
-        print(f"Resuming with product limit: {product_limit}")
 
-    output_file = "products.csv"
-    NUM_THREADS = 10  # Number of concurrent threads
-
-    with open(output_file, "a" if resume_mode else "w", newline="", encoding="utf-8") as csvfile:
+    # Open CSV file (append if resuming, else write new)
+    output_mode = "a" if resume_mode else "w"
+    with open("products.csv", output_mode, newline="", encoding="utf-8") as csvfile:
         fieldnames = ["url", "title", "description", "price", "image_url"]
+        global csv_writer
         csv_writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         if not resume_mode:
             csv_writer.writeheader()
 
+        # Start worker threads
         threads = []
-        if (not resume_mode and mode == "2") or (resume_mode and work_queue.empty() == False and any("http" in url for url in list(work_queue.queue)) and base_netloc):
-            # Home URL mode: use worker_crawl
-            for _ in range(NUM_THREADS):
-                t = threading.Thread(target=worker_crawl, args=(base_netloc, product_limit, csv_writer, NUM_THREADS))
-                t.daemon = True
-                t.start()
-                threads.append(t)
-        else:
-            # Modes 1, 3, 4 or resume with pre-populated product URLs: use worker_product
-            for _ in range(NUM_THREADS):
-                t = threading.Thread(target=worker_product, args=(product_limit, csv_writer, NUM_THREADS))
-                t.daemon = True
-                t.start()
-                threads.append(t)
+        for _ in range(NUM_THREADS):
+            t = threading.Thread(target=worker, args=(NUM_THREADS, product_limit))
+            t.daemon = True
+            t.start()
+            threads.append(t)
 
         work_queue.join()
         for t in threads:
             t.join()
 
     print(f"Scraping complete. Total products scraped: {scraped_count}")
-    # On successful completion, remove resume state.
+    # If scraping finished, remove the resume state file.
     if os.path.exists(resume_file):
         os.remove(resume_file)
