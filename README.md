@@ -1,3 +1,12 @@
+
+## Try it on different sites and see where it works and it doesnt . And me know the results :)
+Most of the woocommerce site should work without any changes.
+Also check if your ip is getting blocked or not due to scraping. 
+
+## The code will only work if it is able to fetch the product files. 
+
+
+
 # product-scrapper
 
 MINIMUM SYSTEM REQ TO RUN THIS : 
