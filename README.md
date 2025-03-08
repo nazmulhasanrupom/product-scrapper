@@ -1,9 +1,17 @@
 
+## Assalamualaikum
+
+`(this is totally for educational purpose , i or my work will not be responsible for any missuse)`
+
 ## Try it on different sites and see where it works and it doesnt . And me know the results :)
 Most of the woocommerce site should work without any changes.
 Also check if your ip is getting blocked or not due to scraping. 
 
-## The code will only work if it is able to fetch the product files. 
+## The code will only work if it is able to visit the website(means it is not blocked by any defender like cloudflare) and it is able to fetch the product informations(like title tag, description tag, img tag e.t.c)
+
+If its not able to fetch any product at all try to change the ip.
+(i shall try to implement proxy feature in future updates in sha allah)
+
 
 
 
