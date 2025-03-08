@@ -1,49 +1,57 @@
-Below is a simple, kid-friendly documentation that explains what the tool does and how to use it. You can share this with anyone—even a 10‑year‑old!
 
+**Product Scraper Tool – User Guide**
 ---
 
-# Product Scraper Tool – User Guide
-
-## What Does It Do?
+### What Does It Do?
 
 This tool is like a smart robot that visits websites and collects important information about products. It finds details like the product’s name, what it is about (description), its price, and a picture (image URL). Then it saves all this information in a special file called a CSV (which you can open in a program like Excel).
 
-## How Can It Get Product Information?
+---
+
+### How Can It Get Product Information?
 
 You have **4 different ways** to tell the robot where to look:
 
-1. **Sitemap Mode:**  
+1. **Sitemap Mode:**
    - A sitemap is like a treasure map for a website. It tells the robot where all the products are.
    - You can either type in the sitemap addresses yourself or give the robot a file (a text file) that has a list of sitemap addresses.
 
-2. **Home URL Mode (Crawl Mode):**  
+2. **Home URL Mode (Crawl Mode):**
    - You give the robot a website’s main page (home page).  
    - The robot will start there, follow links on the site, and look for product pages.
 
-3. **Single Page Mode:**  
+3. **Single Page Mode:**
    - You give the robot one page that has several products listed.
    - The robot will look at that page and collect the product information it finds there.
 
-4. **Product URL File Mode:**  
+4. **Product URL File Mode:**
    - You create a file with a list of product page addresses (URLs).  
    - The robot reads the file and visits each page to get the product details.
 
-## Special Feature: Resume Your Work!
+---
+
+### Special Feature: Resume Your Work!
 
 Sometimes, if the power goes out or the internet stops working, the robot can “remember” what it has done so far. When you run the tool again, you can tell it to continue from where it left off. This means you won’t lose all the work that was already done!
 
-## What You Need Before You Start
+---
+
+### What You Need Before You Start
 
 - **A computer with the internet.**
 - **Python 3.6 or higher installed.**
 - **A few extra packages installed:**  
   You can install them by opening your command prompt (or terminal) and typing:
-  ```bash
+
+  ```
   pip install requests beautifulsoup4 lxml
   ```
+
   These packages help the robot talk to websites and understand the pages.
 
-## How to Use the Tool – Step by Step
+---
+
+### How to Use the Tool – Step by Step
 
 1. **Open Your Command Prompt or Terminal:**
    - This is where you will run the robot (the code).
@@ -81,7 +89,62 @@ Sometimes, if the power goes out or the internet stops working, the robot can �
    - If something stops the tool (like a power cut), when you run it again, it will ask if you want to resume.  
      Type **y** for yes, and it will continue where it left off.
 
-## What’s in the CSV File?
+---
+
+### Changing HTML Tags and Classes
+
+Websites can look different from each other. Sometimes, the names of the classes or the structure of the website can be different from one site to another. So, the tool needs to know where to find the product details on the page. 
+
+For each of the product details (like title, description, price, etc.), the robot looks for specific HTML tags and class names. Here's how you can change these for different websites:
+
+- **Title of the Product:**  
+   Usually found in `<h1>` or `<h2>` tags.  
+   Example:  
+   ```html
+   <h1 class="product-title">Product Name</h1>
+   ```
+   Change the tag or class based on the website you're scraping.
+
+- **Price of the Product:**  
+   Typically in a `<span>` or `<div>` tag with a class like `"price"` or `"product-price"`.  
+   Example:  
+   ```html
+   <span class="price">29.99</span>
+   ```
+   Update the tag or class name to match the site you’re scraping.
+
+- **Description of the Product:**  
+   Often in a `<div>` or `<p>` tag with a class like `"product-description"`.  
+   Example:  
+   ```html
+   <div class="product-description">This is a great product.</div>
+   ```
+   Make sure to update the class name if it's different on the website you are scraping.
+
+- **Image URL:**  
+   The image is usually inside an `<img>` tag.  
+   Example:  
+   ```html
+   <img src="image_url.jpg" class="product-image"/>
+   ```
+   The class name or the tag might vary, so adjust accordingly.
+
+**How to Change the Code for a New Website:**
+- Look at the website you want to scrape and find the **HTML structure** (use your browser's "Inspect Element" tool to view the page’s HTML).
+- Identify the tags and classes where the information you want (product name, price, description, image) is located.
+- Go to the script and **update the code** with the correct tags and classes for the site you’re working with.
+
+**Example Update:**
+If the product name is inside a `<span>` with the class `product-name`, and the price is inside a `<div>` with the class `product-cost`, you would change the code to:
+
+```python
+title = soup.find('span', {'class': 'product-name'}).get_text()
+price = soup.find('div', {'class': 'product-cost'}).get_text()
+```
+
+---
+
+### What’s in the CSV File?
 
 After the tool finishes:
 - Open **products.csv**.
@@ -92,7 +155,9 @@ After the tool finishes:
   - **Price**: How much it costs.
   - **Image URL**: A link to a picture of the product.
 
-## Extra Fun Features
+---
+
+### Extra Fun Features
 
 - **Multi-threading:**  
   The robot can work on many pages at the same time, which makes it faster!
@@ -103,3 +168,5 @@ After the tool finishes:
 ---
 
 That’s it! Now you have a complete guide that explains how the tool works and how to use it in a very simple way. Happy scraping!
+
+---
