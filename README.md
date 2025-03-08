@@ -46,6 +46,9 @@ urllib.parse: For parsing URLs (part of the standard library).
 
 
 ## Now update the HTML Classes in the code**
+First run the code as it is if doesnt work then try to update the classes.
+
+## If the code doesnt stop automatically , press `ctrl+c`
 
 ## Features : 
 
