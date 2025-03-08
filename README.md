@@ -21,14 +21,23 @@ Libraries: requests, beautifulsoup4, lxml, csv
 Before you run the .py file create a virtual environment and intall the following libraries : 
 
 requests: For sending HTTP requests.
+
 beautifulsoup4: For parsing HTML and extracting data.
+
 lxml: An optional parser used by BeautifulSoup for faster parsing (if needed).
+
 csv: For writing data to CSV files (this is part of Python's standard library).
+
 os: For interacting with the operating system (also part of the standard library).
+
 pickle: For saving and loading Python objects (part of the standard library).
+
 time: For time delays and managing sleep times (part of the standard library).
+
 queue: For using a thread-safe queue (part of the standard library).
+
 threading: For handling multiple threads (part of the standard library).
+
 urllib.parse: For parsing URLs (part of the standard library).
 
 ## pip install requests
